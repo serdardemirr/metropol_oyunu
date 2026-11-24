@@ -1,0 +1,31 @@
+rules_version = '2';
+
+// Arkadaş grubu için temel kurallar.
+// Not: Zar istemcide atılıyor; kötü niyetli bir istemci sonucu değiştirebilir.
+// İleride zar ve hamleleri Cloud Functions'a taşıyarak sunucu otoritesi kurulmalı.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /rooms/{code} {
+      allow read: if request.auth != null;
+
+      // Oda kurma: kurucu kendisi olmalı ve tek oyuncu olmalı.
+      allow create: if request.auth != null
+        && code.matches('^[1-9][0-9]{3}$')
+        && request.resource.data.hostId == request.auth.uid
+        && request.resource.data.players.keys().hasOnly([request.auth.uid]);
+
+      // Güncelleme: odadaki bir oyuncu, ya da kendini ekleyen yeni oyuncu.
+      allow update: if request.auth != null && (
+        request.auth.uid in resource.data.players.keys()
+        || (resource.data.status == 'waiting'
+            && request.resource.data.players.keys()
+                 .removeAll(resource.data.players.keys())
+                 .hasOnly([request.auth.uid]))
+      );
+
+      // Silme: sadece son oyuncu ayrılırken.
+      allow delete: if request.auth != null
+        && resource.data.players.keys().hasOnly([request.auth.uid]);
+    }
+  }
+}
